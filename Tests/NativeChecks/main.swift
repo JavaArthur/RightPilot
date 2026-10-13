@@ -31,7 +31,13 @@ check("all nonseparator menu items have icons") {
     return inspect(menu)
 }
 check("all menu symbols resolve on this OS") { MenuIcon.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil } }
-check("brand renders PNG and compact menu size") { PilotArtwork.brand(size: 128).tiffRepresentation != nil && PilotArtwork.brand(size: 16).size.width == 16 }
+check("selected brand asset decodes with alpha and renders compact size") {
+    let source = URL(fileURLWithPath: "Resources/AppIcon.png")
+    guard let data = try? Data(contentsOf: source), let bitmap = NSBitmapImageRep(data: data) else { return false }
+    return bitmap.hasAlpha && bitmap.pixelsWide >= 1024 && bitmap.pixelsWide == bitmap.pixelsHigh
+        && PilotArtwork.brand(size: 128, sourceURL: source).tiffRepresentation != nil
+        && PilotArtwork.brand(size: 16, sourceURL: source).size.width == 16
+}
 check("RTF template decodes as rich text") { (try? NSAttributedString(data: Template.rtf.contents, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)) != nil }
 let png = directory.appendingPathComponent("transparent.png")
 check("PNG conversion preserves alpha and original bytes") {

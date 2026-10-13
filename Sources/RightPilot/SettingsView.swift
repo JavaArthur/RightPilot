@@ -12,7 +12,7 @@ struct SettingsView: View {
                     Text("让 Finder 里的日常操作更顺手").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("1.1").foregroundStyle(.secondary)
+                Text("1.1.1").foregroundStyle(.secondary)
             }.padding(24)
             Divider()
             TabView {

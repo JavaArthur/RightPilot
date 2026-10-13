@@ -1,26 +1,21 @@
 import AppKit
 
-// Original vector mark: a pointer selecting a short menu, with a teal active row.
-// Shared by the app icon, Finder root and settings. No third-party image assets.
+// The user-selected Click artwork is shared by the host and Finder extension.
 enum PilotArtwork {
-    static func brand(size: CGFloat) -> NSImage {
+    static func brand(size: CGFloat, sourceURL: URL? = nil) -> NSImage {
+        let url = sourceURL ?? Bundle.main.url(forResource: "AppIcon", withExtension: "png")
+        let source = url.flatMap { NSImage(contentsOf: $0) }
+            ?? NSImage(systemSymbolName: "computermouse.fill", accessibilityDescription: "RightPilot")!
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
-        let transform = NSAffineTransform(); transform.scale(by: size / 1024); transform.concat()
-        let outer = NSRect(x: 48, y: 48, width: 928, height: 928)
-        let background = NSBezierPath(roundedRect: outer, xRadius: 210, yRadius: 210)
-        NSGradient(starting: NSColor(calibratedRed: 0.10, green: 0.38, blue: 0.83, alpha: 1), ending: NSColor(calibratedRed: 0.06, green: 0.16, blue: 0.40, alpha: 1))!.draw(in: background, angle: -70)
-        for (y, width) in [(CGFloat(660), CGFloat(370)), (CGFloat(485), CGFloat(285)), (CGFloat(310), CGFloat(370))] {
-            (y == 485 ? NSColor(calibratedRed: 0.22, green: 0.89, blue: 0.77, alpha: 1) : NSColor.white.withAlphaComponent(0.28)).setFill()
-            NSBezierPath(roundedRect: NSRect(x: 435, y: y, width: width, height: 76), xRadius: 32, yRadius: 32).fill()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        if url != nil {
+            // A consistent native silhouette keeps the generated texture inside the tile.
+            NSBezierPath(roundedRect: NSRect(x: size * 0.06, y: size * 0.06, width: size * 0.88, height: size * 0.88), xRadius: size * 0.19, yRadius: size * 0.19).addClip()
         }
-        let pointer = NSBezierPath()
-        pointer.move(to: NSPoint(x: 215, y: 770)); pointer.line(to: NSPoint(x: 215, y: 275))
-        pointer.line(to: NSPoint(x: 330, y: 386)); pointer.line(to: NSPoint(x: 415, y: 203))
-        pointer.line(to: NSPoint(x: 505, y: 245)); pointer.line(to: NSPoint(x: 417, y: 429))
-        pointer.line(to: NSPoint(x: 576, y: 429)); pointer.close()
-        NSColor.white.setFill(); pointer.fill()
-        image.unlockFocus(); image.isTemplate = false
+        source.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+        image.unlockFocus()
+        image.isTemplate = false
         return image
     }
     static func menu(_ icon: MenuIcon) -> NSImage {

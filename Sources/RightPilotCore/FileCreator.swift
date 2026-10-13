@@ -18,24 +18,31 @@ public enum FileCreator {
         _ = try Paths.directory(directory.path)
         let url = directory.appendingPathComponent(name)
         if let template {
-            let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o644))
-            guard fd >= 0 else { throw failure(errno, name: name) }
-            var completed = false
-            defer { Darwin.close(fd); if !completed { Darwin.unlink(url.path) } }
-            let bytes = [UInt8](template.contents)
-            try bytes.withUnsafeBytes { buffer in
-                var offset = 0
-                while offset < buffer.count {
-                    let n = Darwin.write(fd, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
-                    if n < 0 && errno == EINTR { continue }
-                    guard n > 0 else { throw failure(errno, name: name) }; offset += n
-                }
-            }
-            guard fsync(fd) == 0 else { throw failure(errno, name: name) }
-            completed = true
+            return try write(template.contents, in: directory, name: name)
         } else {
             guard mkdir(url.path, mode_t(0o755)) == 0 else { throw failure(errno, name: name) }
         }
+        return url
+    }
+    @discardableResult public static func write(_ data: Data, in directory: URL, name: String) throws -> URL {
+        try validateName(name)
+        guard directory.isFileURL else { throw PilotError.invalid("只能在本地目录写入文件。") }
+        _ = try Paths.directory(directory.path)
+        let url = directory.appendingPathComponent(name)
+        let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o644))
+        guard fd >= 0 else { throw failure(errno, name: name) }
+        var completed = false
+        defer { Darwin.close(fd); if !completed { Darwin.unlink(url.path) } }
+        try data.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let n = Darwin.write(fd, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+                if n < 0 && errno == EINTR { continue }
+                guard n > 0 else { throw failure(errno, name: name) }; offset += n
+            }
+        }
+        guard fsync(fd) == 0 else { throw failure(errno, name: name) }
+        completed = true
         return url
     }
     private static func failure(_ code: Int32, name: String) -> Error {

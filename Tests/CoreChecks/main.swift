@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import RightPilotCore
 
 var passed = 0
@@ -77,7 +78,7 @@ check("corrupt config is preserved") {
     let current = try Data(contentsOf: store); return rejected && current == data
 }
 check("future config is rejected without changing file") {
-    var config = Configuration(); config.version = 2
+    var config = Configuration(); config.version = 3
     let data = try JSONEncoder().encode(config); try data.write(to: store)
     let rejected = rejects { _ = try ConfigurationStore.read(store, fallback: Configuration()) }
     let current = try Data(contentsOf: store); return rejected && current == data
@@ -105,6 +106,67 @@ check("exclusive creation permits one concurrent winner") {
         if (try? FileCreator.create(in: root, name: "race.json", template: .json)) != nil { lock.lock(); wins += 1; lock.unlock() }
     }
     let data = try Data(contentsOf: root.appendingPathComponent("race.json")); return wins == 1 && data == Template.json.contents
+}
+check("v1 settings migration preserves disabled features and favorites") {
+    var c = Configuration(); c.enabled = [.terminal, .favorites]; c.templates = [.json]
+    c.favorites = [Favorite(name: "mine", path: root.path)]
+    var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(c)) as! [String: Any]; object["version"] = 1
+    let migrated = try JSONDecoder().decode(Configuration.self, from: JSONSerialization.data(withJSONObject: object))
+    return migrated.version == 2 && !migrated.enabled.contains(.copyPath) && migrated.enabled.contains(.visibility) && migrated.templates.contains(.rtf) && !migrated.templates.contains(.shell) && migrated.favorites == c.favorites
+}
+check("RTF has a real format header") { String(decoding: Template.rtf.contents, as: UTF8.self).hasPrefix("{\\rtf1") }
+check("new operation protocol roundtrip") {
+    for action in [Action.hideItems, .showItems, .hideContents, .showContents, .copyTo, .convertPNG, .convertJPEG, .sha256] {
+        let r = ActionRequest(action: action, paths: [root.path]); if try ActionRequest.decode(r.url()) != r { return false }
+    }; return true
+}
+check("SHA256 matches published abc test vector") {
+    let url = try FileCreator.write(Data("abc".utf8), in: root, name: "abc")
+    return try FileOperations.sha256(url.path) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+}
+check("SHA256 rejects folders and symlinks") {
+    let link = root.appendingPathComponent("hash-link"); try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+    return rejects { _ = try FileOperations.sha256(root.path) } && rejects { _ = try FileOperations.sha256(link.path) }
+}
+check("hidden flag roundtrip preserves content and unrelated flags") {
+    let url = try FileCreator.write(Data("keep".utf8), in: root, name: "visibility.txt")
+    var before = stat(); lstat(url.path, &before)
+    let hide = FileOperations.setHidden([url.path], hidden: true)
+    var hidden = stat(); lstat(url.path, &hidden)
+    let show = FileOperations.setHidden([url.path], hidden: false)
+    var after = stat(); lstat(url.path, &after)
+    let content = try String(contentsOf: url)
+    return hide.succeeded.count == 1 && show.succeeded.count == 1 && hidden.st_flags & UInt32(UF_HIDDEN) != 0 && after.st_flags == before.st_flags && content == "keep"
+}
+check("visibility skips symlinks and dotfiles") {
+    let dot = try FileCreator.write(Data(), in: root, name: ".keep")
+    let link = root.appendingPathComponent("hash-link")
+    let result = FileOperations.setHidden([dot.path, link.path], hidden: true)
+    return result.succeeded.isEmpty && result.failures.count == 2
+}
+check("directory visibility lists direct children only") {
+    let nested = try FileCreator.create(in: folder, name: "nested", template: .text)
+    let children = try FileOperations.immediateChildren(of: root.path)
+    let canonical = Set(children.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+    return canonical.contains(folder.resolvingSymlinksInPath().path) && !canonical.contains(nested.resolvingSymlinksInPath().path)
+}
+check("copy preserves source and refuses collision") {
+    let source = root.appendingPathComponent("abc")
+    let first = FileOperations.copy([source.path], to: folder)
+    let second = FileOperations.copy([source.path], to: folder)
+    let sourceData = try Data(contentsOf: source); let targetData = try Data(contentsOf: folder.appendingPathComponent("abc"))
+    return first.succeeded.count == 1 && second.failures.count == 1 && sourceData == targetData
+}
+check("copy refuses directory into itself") { FileOperations.copy([root.path], to: folder).failures.count == 1 }
+check("mixed copy success reports partial failure") { let r = FileOperations.copy([root.appendingPathComponent("sample.json").path, root.appendingPathComponent("nonexistent").path], to: folder); return r.succeeded.count == 1 && r.failures.count == 1 }
+check("image menu rejects mixed nonimage selection") {
+    let ctx = MenuContext(target: root, selected: [root.appendingPathComponent("a.png"), file], background: false, isDirectory: isDir)
+    return MenuPolicy.entries(context: ctx, configuration: Configuration()).first(where: { $0.title == "图片转换" })?.enabled == false
+}
+check("background visibility targets directory not stale selection") {
+    let ctx = MenuContext(target: root, selected: [file], background: true, isDirectory: isDir)
+    let tools = MenuPolicy.entries(context: ctx, configuration: Configuration()).first(where: { $0.title == "文件操作" })!.children
+    return tools.first(where: { $0.action?.action == .hideItems }) == nil && tools.first(where: { $0.action?.action == .showContents })?.action?.paths == [root.path]
 }
 print("Core checks: \(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

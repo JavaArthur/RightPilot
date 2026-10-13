@@ -6,13 +6,13 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: "cursorarrow.and.square.on.square.dashed").font(.system(size: 32)).foregroundStyle(.blue)
+                Image(nsImage: PilotArtwork.brand(size: 48))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("RightPilot").font(.system(size: 25, weight: .semibold))
                     Text("让 Finder 里的日常操作更顺手").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("1.0").foregroundStyle(.secondary)
+                Text("1.1").foregroundStyle(.secondary)
             }.padding(24)
             Divider()
             TabView {
@@ -57,7 +57,7 @@ struct SettingsView: View {
         }.padding(12)
     }
     private var menu: some View {
-        HStack(alignment: .top, spacing: 40) {
+        ScrollView { HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("显示的操作").font(.headline)
                 ForEach(Feature.allCases, id: \.self) { feature in
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 Text("Shell 文件只创建文本，不自动执行，也不添加执行权限。").font(.caption).foregroundStyle(.secondary).frame(width: 220, alignment: .leading)
             }
             Spacer()
-        }.padding(16).disabled(model.readOnly)
+        }.padding(16).disabled(model.readOnly) }
     }
     private var favorites: some View {
         VStack(alignment: .leading, spacing: 12) {

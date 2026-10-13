@@ -16,9 +16,11 @@ enum MenuRenderer {
     static func make(_ entries: [MenuEntry], target: AnyObject, selector: Selector, registry: MenuRequestRegistry) -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false
         for entry in entries {
+            if entry.isSeparator { menu.addItem(.separator()); continue }
             let item = NSMenuItem(title: entry.title, action: entry.action == nil ? nil : selector, keyEquivalent: "")
             item.isEnabled = entry.enabled
             item.target = target
+            item.image = PilotArtwork.menu(entry.icon)
             if let request = entry.action { item.tag = registry.insert(request) }
             if !entry.children.isEmpty { item.submenu = make(entry.children, target: target, selector: selector, registry: registry) }
             menu.addItem(item)

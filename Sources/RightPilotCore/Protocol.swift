@@ -1,6 +1,6 @@
 import Foundation
 
-public enum Action: String, Codable { case createFile, createFolder, copyPath, copyShellPath, copyFileURL, copyName, terminal, favorite, addFavorite, settings }
+public enum Action: String, Codable { case createFile, createFolder, copyPath, copyShellPath, copyFileURL, copyName, terminal, favorite, addFavorite, settings, hideItems, showItems, hideContents, showContents, copyTo, convertPNG, convertJPEG, sha256 }
 public struct ActionRequest: Codable, Equatable {
     public var version = 1
     public var id: UUID
@@ -16,8 +16,8 @@ public struct ActionRequest: Codable, Equatable {
         for path in paths { try Paths.validate(path) }
         switch action {
         case .createFile: guard paths.count == 1, template != nil else { throw PilotError.invalid("新建文件参数不完整。") }
-        case .createFolder, .terminal, .addFavorite: guard paths.count == 1 else { throw PilotError.invalid("请选择一个目录。") }
-        case .copyPath, .copyShellPath, .copyFileURL, .copyName: guard !paths.isEmpty else { throw PilotError.invalid("没有可操作的文件。") }
+        case .createFolder, .terminal, .addFavorite, .hideContents, .showContents: guard paths.count == 1 else { throw PilotError.invalid("请选择一个目录。") }
+        case .copyPath, .copyShellPath, .copyFileURL, .copyName, .hideItems, .showItems, .copyTo, .convertPNG, .convertJPEG, .sha256: guard !paths.isEmpty else { throw PilotError.invalid("没有可操作的文件。") }
         case .favorite: guard favoriteID != nil, paths.isEmpty else { throw PilotError.invalid("常用目录参数不完整。") }
         case .settings: guard paths.isEmpty else { throw PilotError.invalid("无效的设置请求。") }
         }

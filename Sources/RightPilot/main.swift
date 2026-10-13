@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var requests: [ActionRequest] = []
     var seen: [UUID] = []
     var draining = false
+    var working = false
+    var progressWindow: NSPanel?
+    let worker = DispatchQueue(label: "cn.aichanning.RightPilot.operations", qos: .userInitiated)
     var ready = false
     let registry = MenuRequestRegistry()
     init(configURL: URL) { model = AppModel(configURL: configURL); super.init() }
@@ -67,9 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requests.append(request); if ready { drain() }
     }
     func drain() {
-        guard !draining else { return }; draining = true
+        guard !draining, !working else { return }; draining = true
         DispatchQueue.main.async {
-            while !self.requests.isEmpty {
+            while !self.requests.isEmpty && !self.working {
                 let request = self.requests.removeFirst()
                 do { try self.perform(request) } catch { self.showError(error) }
             }
@@ -79,6 +82,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func perform(_ request: ActionRequest) throws {
         try request.validate()
         switch request.action {
+        case .hideItems, .showItems, .hideContents, .showContents:
+            let contents = request.action == .hideContents || request.action == .showContents
+            let hidden = request.action == .hideItems || request.action == .hideContents
+            let paths = try contents ? FileOperations.immediateChildren(of: request.paths[0]) : request.paths
+            guard !paths.isEmpty else { throw PilotError.invalid("没有可处理的项目。") }
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert(); alert.messageText = "\(hidden ? "隐藏" : "取消隐藏") \(paths.count) 个项目？"
+            alert.informativeText = (contents ? "仅处理当前目录的直接子项，不递归。\n" : "仅修改所选项目的隐藏标记。\n") + paths.prefix(5).map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: "\n") + "\n\n不删除文件，不重命名点号文件；符号链接会跳过。可用“取消隐藏当前目录中的项目”恢复。"
+            alert.addButton(withTitle: hidden ? "隐藏" : "取消隐藏"); alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            beginWork("正在更新隐藏标记") { (FileOperations.setHidden(paths, hidden: hidden), nil) }
+        case .copyTo:
+            NSApp.activate(ignoringOtherApps: true)
+            let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+            panel.prompt = "复制到这里"; panel.message = "复制 \(request.paths.count) 个项目；遇到同名文件将跳过，原文件保持不变。"
+            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            beginWork("正在复制") { (FileOperations.copy(request.paths, to: destination), nil) }
+        case .convertPNG, .convertJPEG:
+            let format: ImageConverter.Format = request.action == .convertPNG ? .png : .jpeg
+            beginWork("正在转换图片") {
+                var result = BatchOutcome()
+                for path in request.paths {
+                    do { result.succeeded.append(try ImageConverter.convert(path, to: format).path) }
+                    catch { result.failures.append("\(URL(fileURLWithPath: path).lastPathComponent)：\(error.localizedDescription)") }
+                }
+                return (result, nil)
+            }
+        case .sha256:
+            beginWork("正在计算 SHA-256") {
+                var result = BatchOutcome(); var lines: [String] = []
+                for path in request.paths {
+                    do { let digest = try FileOperations.sha256(path); lines.append(request.paths.count == 1 ? digest : digest + "  " + path); result.succeeded.append(path) }
+                    catch { result.failures.append("\(URL(fileURLWithPath: path).lastPathComponent)：\(error.localizedDescription)") }
+                }
+                return (result, lines.isEmpty ? nil : lines.joined(separator: "\n"))
+            }
         case .settings: showSettings()
         case .copyPath: try NativeActions.copy(request.paths, as: .path)
         case .copyShellPath: try NativeActions.copy(request.paths, as: .shell)
@@ -97,6 +136,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .createFile, .createFolder:
             let folder = try Paths.directory(request.paths[0])
             try create(folder: folder, template: request.template)
+        }
+    }
+    func beginWork(_ title: String, task: @escaping () throws -> (BatchOutcome, String?)) {
+        working = true
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 350, height: 90), styleMask: [.titled], backing: .buffered, defer: false)
+        panel.title = title; panel.isReleasedWhenClosed = false
+        let label = NSTextField(labelWithString: "完成后会显示处理结果，原文件不会被覆盖。")
+        label.frame = NSRect(x: 18, y: 20, width: 320, height: 22); panel.contentView?.addSubview(label)
+        let spinner = NSProgressIndicator(frame: NSRect(x: 164, y: 51, width: 22, height: 22)); spinner.style = .spinning; spinner.startAnimation(nil); panel.contentView?.addSubview(spinner)
+        panel.center(); panel.orderFrontRegardless(); progressWindow = panel
+        worker.async {
+            let result = Result { try task() }
+            DispatchQueue.main.async {
+                self.progressWindow?.close(); self.progressWindow = nil
+                switch result {
+                case .success(let (outcome, clipboard)):
+                    if let clipboard { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(clipboard, forType: .string) }
+                    let alert = NSAlert(); alert.messageText = clipboard == nil ? "处理完成" : "SHA-256 已复制"
+                    alert.informativeText = outcome.summary; alert.addButton(withTitle: "好")
+                    NSApp.activate(ignoringOtherApps: true); alert.runModal()
+                case .failure(let error): self.showError(error)
+                }
+                self.working = false; self.drain()
+            }
         }
     }
     func create(folder: URL, template: Template?) throws {

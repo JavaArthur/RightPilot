@@ -38,7 +38,7 @@ final class RightPilotFinder: FIFinderSync {
             (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         }
         let content = MenuRenderer.make(MenuPolicy.entries(context: context, configuration: configuration), target: self, selector: #selector(performAction(_:)), registry: registry)
-        let menu = NSMenu(); let item = NSMenuItem(title: "RightPilot", action: nil, keyEquivalent: ""); item.submenu = content; menu.addItem(item)
+        let menu = NSMenu(); let item = NSMenuItem(title: "RightPilot", action: nil, keyEquivalent: ""); item.submenu = content; item.image = PilotArtwork.brand(size: 16); menu.addItem(item)
         return menu
     }
     @objc private func performAction(_ sender: NSMenuItem) {

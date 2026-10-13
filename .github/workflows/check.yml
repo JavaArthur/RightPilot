@@ -1,0 +1,20 @@
+name: macOS checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core and native adapter checks
+        run: bash scripts/check.sh
+      - name: Build and verify application and extension
+        run: bash scripts/build-app.sh
+      - name: Verify package metadata
+        run: |
+          plutil -lint dist/RightPilot.app/Contents/Info.plist
+          plutil -lint dist/RightPilot.app/Contents/PlugIns/RightPilotFinder.appex/Contents/Info.plist
+          codesign --verify --deep --strict dist/RightPilot.app
